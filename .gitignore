@@ -60,3 +60,6 @@ lora-output/
 *.bin
 wandb/
 runs/
+
+# drip scratch
+.drip/_*

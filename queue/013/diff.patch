@@ -1,0 +1,81 @@
+diff --git a/tests/test_data.py b/tests/test_data.py
+new file mode 100644
+index 0000000..ca65fad
+--- /dev/null
++++ b/tests/test_data.py
+@@ -0,0 +1,75 @@
++"""Tests for lora_lab.data."""
++
++from __future__ import annotations
++
++from lora_lab.data import dataset_stats, format_prompt, train_val_split
++
++# ---------------------------------------------------------------------------
++# format_prompt
++# ---------------------------------------------------------------------------
++
++
++def test_format_prompt_with_input():
++    record = {"instruction": "Summarize.", "input": "Some text here.", "output": "A summary."}
++    prompt, response = format_prompt(record)
++    assert "### Instruction:" in prompt
++    assert "### Input:" in prompt
++    assert "### Response:" in prompt
++
++
++def test_format_prompt_no_input():
++    record = {"instruction": "List three fruits.", "input": "", "output": "Apple, Banana, Cherry"}
++    prompt, response = format_prompt(record)
++    assert "### Instruction:" in prompt
++    assert "### Response:" in prompt
++    assert "### Input:" not in prompt
++
++
++def test_format_prompt_returns_output_as_response():
++    record = {"instruction": "Say hello.", "input": "", "output": "Hello, world!"}
++    prompt, response = format_prompt(record)
++    assert response == "Hello, world!"
++
++
++# ---------------------------------------------------------------------------
++# train_val_split
++# ---------------------------------------------------------------------------
++
++
++def test_train_val_split_sizes(sample_records):
++    train, val = train_val_split(sample_records, val_ratio=0.2)
++    # 10 records * 0.2 = 2 val, 8 train
++    assert len(train) + len(val) == len(sample_records)
++    assert len(val) == 2
++    assert len(train) == 8
++
++
++def test_train_val_split_deterministic(sample_records):
++    train_a, val_a = train_val_split(sample_records, val_ratio=0.2, seed=7)
++    train_b, val_b = train_val_split(sample_records, val_ratio=0.2, seed=7)
++    assert train_a == train_b
++    assert val_a == val_b
++
++
++def test_train_val_split_different_seeds(sample_records):
++    train_a, val_a = train_val_split(sample_records, val_ratio=0.2, seed=1)
++    train_b, val_b = train_val_split(sample_records, val_ratio=0.2, seed=99)
++    # With 10 records and different seeds it is highly unlikely the shuffles match.
++    assert train_a != train_b or val_a != val_b
++
++
++# ---------------------------------------------------------------------------
++# dataset_stats
++# ---------------------------------------------------------------------------
++
++
++def test_dataset_stats_count(sample_records):
++    stats = dataset_stats(sample_records)
++    assert stats["count"] == len(sample_records)
++
++
++def test_dataset_stats_has_avg_min_max(sample_records):
++    stats = dataset_stats(sample_records)
++    assert "avg_instruction_len" in stats
++    assert "min_instruction_len" in stats
++    assert "max_instruction_len" in stats

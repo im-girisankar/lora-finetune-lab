@@ -1,0 +1,43 @@
+name: daily-milestone
+
+# Runs every day and releases at most one pre-built milestone chunk, but only
+# once its scheduled release_after date has arrived (see scripts/apply_next.sh).
+# The commit is authored as the repo owner and dated the day it actually fires —
+# no pre-stamped dates. Daily cadence + per-event dates spreads the work
+# organically across the year and keeps the repo active (so the schedule is
+# never auto-disabled for inactivity).
+on:
+  schedule:
+    - cron: "19 4 * * *" # daily 04:19 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-milestone
+  cancel-in-progress: false
+
+jobs:
+  drip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.DRIP_TOKEN }}
+          fetch-depth: 0
+
+      - name: Release next due milestone chunk
+        run: bash scripts/apply_next.sh
+
+      - name: Commit & push
+        run: |
+          if [ -f .drip/_noop ]; then
+            echo "Nothing due today — no commit."
+            exit 0
+          fi
+          git config user.name "Girisankar G"
+          git config user.email "girisankargopakumar@gmail.com"
+          git commit -F .drip/_commit_msg \
+            --author="Girisankar G <girisankargopakumar@gmail.com>"
+          git push

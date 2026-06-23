@@ -1,0 +1,88 @@
+diff --git a/tests/conftest.py b/tests/conftest.py
+new file mode 100644
+index 0000000..59d071a
+--- /dev/null
++++ b/tests/conftest.py
+@@ -0,0 +1,82 @@
++"""Shared fixtures for the lora-finetune-lab test suite."""
++
++from __future__ import annotations
++
++import pytest
++
++from lora_lab.config import LoraLabConfig
++
++
++class StubModel:
++    """Implements the Model protocol by returning a canned string."""
++
++    CANNED = "stub response"
++
++    def generate(self, prompt: str) -> str:
++        return self.CANNED
++
++
++@pytest.fixture()
++def sample_records() -> list[dict]:
++    """Ten realistic instruction-tuning records."""
++    return [
++        {
++            "instruction": "Summarize the following paragraph in one sentence.",
++            "input": "The Amazon rainforest is the world's largest tropical rainforest.",
++            "output": "The Amazon rainforest is the largest tropical rainforest on Earth.",
++        },
++        {
++            "instruction": "Translate the sentence to French.",
++            "input": "Good morning, how are you?",
++            "output": "Bonjour, comment allez-vous?",
++        },
++        {
++            "instruction": "List three benefits of regular exercise.",
++            "input": "",
++            "output": "1. Improves cardiovascular health. 2. Boosts mood. 3. Strengthens muscles.",
++        },
++        {
++            "instruction": "Classify the sentiment of the review.",
++            "input": "This product exceeded all my expectations!",
++            "output": "Positive",
++        },
++        {
++            "instruction": "Fix the grammar in the following sentence.",
++            "input": "She don't know nothing about it.",
++            "output": "She doesn't know anything about it.",
++        },
++        {
++            "instruction": "Generate a Python function to reverse a string.",
++            "input": "",
++            "output": "def reverse_string(s: str) -> str:\n    return s[::-1]",
++        },
++        {
++            "instruction": "What is the capital of Japan?",
++            "input": "",
++            "output": "Tokyo",
++        },
++        {
++            "instruction": "Rewrite the sentence in passive voice.",
++            "input": "The chef cooked the meal.",
++            "output": "The meal was cooked by the chef.",
++        },
++        {
++            "instruction": "Extract all named entities from the text.",
++            "input": "Barack Obama was born in Hawaii and later became US President.",
++            "output": "Barack Obama (Person), Hawaii (Location), US President (Title)",
++        },
++        {
++            "instruction": "Explain the concept of gradient descent in simple terms.",
++            "input": "",
++            "output": (
++                "Gradient descent is an optimization algorithm that iteratively adjusts "
++                "parameters by moving in the direction of steepest loss decrease."
++            ),
++        },
++    ]
++
++
++@pytest.fixture()
++def sample_config() -> LoraLabConfig:
++    """A small LoraLabConfig suitable for tests (rank=4 <= alpha=8)."""
++    return LoraLabConfig(rank=4, alpha=8)

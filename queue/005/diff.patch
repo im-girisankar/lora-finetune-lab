@@ -1,0 +1,222 @@
+diff --git a/src/lora_lab/cli.py b/src/lora_lab/cli.py
+new file mode 100644
+index 0000000..860c581
+--- /dev/null
++++ b/src/lora_lab/cli.py
+@@ -0,0 +1,216 @@
++"""Command-line interface for lora-finetune-lab."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++
++
++def _cmd_prep(args: argparse.Namespace) -> None:
++    from lora_lab.data import dataset_stats, format_prompt, load_jsonl
++
++    records = load_jsonl(args.data)
++    stats = dataset_stats(records)
++    print(f"Loaded {stats['count']} records from {args.data}")
++    print(
++        f"Instruction lengths â€” avg: {stats['avg_instruction_len']:.1f}, "
++        f"min: {stats['min_instruction_len']}, max: {stats['max_instruction_len']}"
++    )
++
++    if records:
++        prompt, response = format_prompt(records[0])
++        print("\nSample prompt (first record):")
++        print(prompt)
++        print("\nSample response:")
++        print(response)
++
++
++def _cmd_eval(args: argparse.Namespace) -> None:
++    from lora_lab.data import format_prompt, load_jsonl
++    from lora_lab.eval import EvalResult, run_eval
++
++    class StubModel:
++        """Returns an empty string for every prompt (demonstration only)."""
++
++        def generate(self, prompt: str) -> str:
++            return ""
++
++    records = load_jsonl(args.data)
++    pairs = [format_prompt(r) for r in records]
++    model = StubModel()
++    result: EvalResult = run_eval(model, pairs, model_name=args.model_name)
++    print(f"Model : {result.model_name}")
++    print(f"Exact Match : {result.exact_match_score:.4f}")
++    print(f"Token F1    : {result.token_f1_score:.4f}")
++    print(f"Evaluated on {len(result.prompts)} examples")
++
++
++def _load_predictions_jsonl(path: str) -> tuple[list[str], list[str], list[str]]:
++    """Parse a predictions JSONL file.
++
++    Each line must be a JSON object with keys:
++      - ``prompt``      â€” the input prompt string
++      - ``gold``        â€” the reference (gold) answer
++      - ``prediction``  â€” the model's predicted answer
++
++    Returns a tuple of (prompts, golds, predictions) lists.
++    """
++    prompts: list[str] = []
++    golds: list[str] = []
++    predictions: list[str] = []
++    with open(path, encoding="utf-8") as fh:
++        for lineno, line in enumerate(fh, 1):
++            line = line.strip()
++            if not line:
++                continue
++            try:
++                obj = json.loads(line)
++            except json.JSONDecodeError as exc:
++                raise ValueError(f"{path}:{lineno}: invalid JSON â€” {exc}") from exc
++            for key in ("prompt", "gold", "prediction"):
++                if key not in obj:
++                    raise ValueError(f"{path}:{lineno}: missing required key '{key}'")
++            prompts.append(obj["prompt"])
++            golds.append(obj["gold"])
++            predictions.append(obj["prediction"])
++    if not prompts:
++        raise ValueError(f"{path}: file is empty or contains no valid records")
++    return prompts, golds, predictions
++
++
++def _cmd_card(args: argparse.Namespace) -> None:
++    from lora_lab.config import from_dict, validate
++    from lora_lab.eval import EvalResult, exact_match, task_accuracy, token_f1
++    from lora_lab.model_card import generate_model_card
++
++    with open(args.config, encoding="utf-8") as fh:
++        config_dict = json.load(fh)
++    config = from_dict(config_dict)
++    validate(config)
++
++    # --- load real before/after predictions ---
++    b_prompts, b_golds, b_preds = _load_predictions_jsonl(args.baseline_predictions)
++    t_prompts, t_golds, t_preds = _load_predictions_jsonl(args.tuned_predictions)
++
++    baseline = EvalResult(
++        model_name="baseline",
++        prompts=b_prompts,
++        predictions=b_preds,
++        golds=b_golds,
++        exact_match_score=task_accuracy(b_preds, b_golds, exact_match),
++        token_f1_score=task_accuracy(b_preds, b_golds, token_f1),
++    )
++    tuned = EvalResult(
++        model_name="tuned",
++        prompts=t_prompts,
++        predictions=t_preds,
++        golds=t_golds,
++        exact_match_score=task_accuracy(t_preds, t_golds, exact_match),
++        token_f1_score=task_accuracy(t_preds, t_golds, token_f1),
++    )
++
++    card_text = generate_model_card(config, baseline, tuned, dataset_path=args.data)
++
++    with open(args.output, "w", encoding="utf-8") as fh:
++        fh.write(card_text)
++    print(f"Baseline EM={baseline.exact_match_score:.4f}  F1={baseline.token_f1_score:.4f}")
++    print(f"Tuned    EM={tuned.exact_match_score:.4f}  F1={tuned.token_f1_score:.4f}")
++    print(f"Model card written to {args.output}")
++
++
++def _cmd_train(args: argparse.Namespace) -> None:
++    try:
++        import torch  # noqa: F401
++    except ImportError:
++        print(
++            "Training requires the 'train' extra: "
++            "pip install lora-finetune-lab[train]",
++            file=sys.stderr,
++        )
++        sys.exit(1)
++
++    from lora_lab.config import from_dict, validate
++    from lora_lab.data import load_jsonl, train_val_split
++    from lora_lab.train import train
++
++    with open(args.config, encoding="utf-8") as fh:
++        config_dict = json.load(fh)
++    config = from_dict(config_dict)
++    validate(config)
++
++    records = load_jsonl(args.data)
++    train_data, val_data = train_val_split(records, val_ratio=0.1, seed=42)
++    print(f"Training on {len(train_data)} records, validating on {len(val_data)}")
++    train(config, train_data, val_data)
++
++
++def main() -> None:
++    """Entry point for the ``loralab`` CLI."""
++    parser = argparse.ArgumentParser(
++        prog="loralab",
++        description="LoRA fine-tuning lab â€” data prep, eval, model card, and training",
++    )
++    sub = parser.add_subparsers(dest="command", required=True)
++
++    # --- prep ---
++    prep_p = sub.add_parser("prep", help="Load data, format prompts, show stats")
++    prep_p.add_argument("--data", required=True, metavar="PATH", help="Path to JSONL data file")
++    prep_p.set_defaults(func=_cmd_prep)
++
++    # --- eval ---
++    eval_p = sub.add_parser("eval", help="Run stub evaluation on a dataset")
++    eval_p.add_argument("--data", required=True, metavar="PATH", help="Path to JSONL data file")
++    eval_p.add_argument(
++        "--model-name", default="stub", metavar="STR", help="Label for the model"
++    )
++    eval_p.set_defaults(func=_cmd_eval)
++
++    # --- card ---
++    card_p = sub.add_parser(
++        "card",
++        help="Generate a model card from real before/after prediction files",
++    )
++    card_p.add_argument(
++        "--data", required=True, metavar="PATH", help="Path to JSONL training data file"
++    )
++    card_p.add_argument(
++        "--config", required=True, metavar="PATH", help="Path to JSON config file"
++    )
++    card_p.add_argument(
++        "--output", required=True, metavar="PATH", help="Output path for model card .md"
++    )
++    card_p.add_argument(
++        "--baseline-predictions",
++        required=True,
++        metavar="PATH",
++        help=(
++            "JSONL file with baseline model predictions. "
++            "Each line: {\"prompt\": ..., \"gold\": ..., \"prediction\": ...}"
++        ),
++    )
++    card_p.add_argument(
++        "--tuned-predictions",
++        required=True,
++        metavar="PATH",
++        help=(
++            "JSONL file with tuned model predictions. "
++            "Each line: {\"prompt\": ..., \"gold\": ..., \"prediction\": ...}"
++        ),
++    )
++    card_p.set_defaults(func=_cmd_card)
++
++    # --- train ---
++    train_p = sub.add_parser("train", help="Fine-tune with LoRA (requires train extra)")
++    train_p.add_argument("--data", required=True, metavar="PATH", help="Path to JSONL data file")
++    train_p.add_argument(
++        "--config", required=True, metavar="PATH", help="Path to JSON config file"
++    )
++    train_p.set_defaults(func=_cmd_train)
++
++    parsed = parser.parse_args()
++    parsed.func(parsed)
++
++
++if __name__ == "__main__":
++    main()

@@ -1,0 +1,77 @@
+diff --git a/src/lora_lab/model_card.py b/src/lora_lab/model_card.py
+new file mode 100644
+index 0000000..08c4168
+--- /dev/null
++++ b/src/lora_lab/model_card.py
+@@ -0,0 +1,71 @@
++"""Model card generation from config and evaluation results."""
++
++from __future__ import annotations
++
++from lora_lab.config import LoraLabConfig
++from lora_lab.eval import EvalResult
++
++
++def generate_model_card(
++    config: LoraLabConfig,
++    baseline: EvalResult,
++    tuned: EvalResult,
++    dataset_path: str = "examples/data.jsonl",
++) -> str:
++    """Return a Markdown model card string.
++
++    Sections
++    --------
++    - Model Card header
++    - Base Model
++    - LoRA Parameters (table)
++    - Dataset
++    - Evaluation Results (table with before/after)
++    - Training Note
++    """
++    target_mods = ", ".join(config.target_modules)
++
++    card = f"""# Model Card: {config.base_model} + LoRA
++
++## Base Model
++
++`{config.base_model}`
++
++## LoRA Parameters
++
++| Parameter | Value |
++|-----------|-------|
++| rank | {config.rank} |
++| alpha | {config.alpha} |
++| dropout | {config.dropout} |
++| target_modules | {target_mods} |
++| lr | {config.lr} |
++| epochs | {config.epochs} |
++| batch_size | {config.batch_size} |
++
++## Dataset
++
++Training data: `{dataset_path}`
++
++## Evaluation Results
++
++| Metric | Before (Baseline) | After (Tuned) |
++|--------|:-----------------:|:-------------:|
++| exact_match | {baseline.exact_match_score:.4f} | {tuned.exact_match_score:.4f} |
++| token_f1 | {baseline.token_f1_score:.4f} | {tuned.token_f1_score:.4f} |
++
++Baseline model: `{baseline.model_name}`
++Tuned model: `{tuned.model_name}`
++
++## Training Note
++
++This model was fine-tuned using LoRA (Low-Rank Adaptation) via the
++`lora-finetune-lab` toolkit.  Full training requires the `train` extra and a
++CUDA-capable GPU:
++
++```bash
++pip install lora-finetune-lab[train]
++loralab train --data examples/data.jsonl --config config.json
++```
++"""
++    return card

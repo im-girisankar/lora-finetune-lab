@@ -1,0 +1,3 @@
+Add config module
+
+(part of m2 milestone work)

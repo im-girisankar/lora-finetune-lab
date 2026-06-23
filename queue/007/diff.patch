@@ -1,0 +1,83 @@
+diff --git a/src/lora_lab/data.py b/src/lora_lab/data.py
+new file mode 100644
+index 0000000..0aa4270
+--- /dev/null
++++ b/src/lora_lab/data.py
+@@ -0,0 +1,77 @@
++"""Data loading, formatting, splitting, and statistics utilities."""
++
++from __future__ import annotations
++
++import json
++import random
++from pathlib import Path
++
++
++def load_jsonl(path: str | Path) -> list[dict]:
++    """Read a JSONL file and return a list of dicts (one per line)."""
++    records: list[dict] = []
++    with open(path, encoding="utf-8") as fh:
++        for line in fh:
++            line = line.strip()
++            if line:
++                records.append(json.loads(line))
++    return records
++
++
++def format_prompt(
++    record: dict,
++    template: str = "DEFAULT",
++) -> tuple[str, str]:
++    """Format a record dict into a (prompt_str, response_str) tuple.
++
++    The DEFAULT template follows Alpaca-style formatting.  The ``input``
++    section is omitted when the field is absent or an empty string.
++    """
++    if template == "DEFAULT":
++        instruction = record.get("instruction", "")
++        inp = record.get("input", "")
++        response = record.get("output", "")
++
++        if inp:
++            prompt = (
++                f"### Instruction:\n{instruction}\n\n"
++                f"### Input:\n{inp}\n\n"
++                f"### Response:"
++            )
++        else:
++            prompt = f"### Instruction:\n{instruction}\n\n### Response:"
++
++        return prompt, response
++
++    raise ValueError(f"Unknown template: {template!r}")
++
++
++def train_val_split(
++    records: list[dict],
++    val_ratio: float = 0.1,
++    seed: int = 42,
++) -> tuple[list[dict], list[dict]]:
++    """Deterministic shuffle-then-split into train and validation sets."""
++    rng = random.Random(seed)
++    shuffled = list(records)
++    rng.shuffle(shuffled)
++    split_idx = max(1, int(len(shuffled) * (1 - val_ratio)))
++    return shuffled[:split_idx], shuffled[split_idx:]
++
++
++def dataset_stats(records: list[dict]) -> dict:
++    """Return count and instruction-length statistics for a list of records."""
++    lengths = [len(r.get("instruction", "")) for r in records]
++    if not lengths:
++        return {
++            "count": 0,
++            "avg_instruction_len": 0.0,
++            "min_instruction_len": 0,
++            "max_instruction_len": 0,
++        }
++    return {
++        "count": len(lengths),
++        "avg_instruction_len": sum(lengths) / len(lengths),
++        "min_instruction_len": min(lengths),
++        "max_instruction_len": max(lengths),
++    }

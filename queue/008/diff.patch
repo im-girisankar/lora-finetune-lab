@@ -1,0 +1,147 @@
+diff --git a/src/lora_lab/eval.py b/src/lora_lab/eval.py
+new file mode 100644
+index 0000000..eb3bd11
+--- /dev/null
++++ b/src/lora_lab/eval.py
+@@ -0,0 +1,141 @@
++"""Evaluation utilities: metrics, protocol, result dataclass, and comparison."""
++
++from __future__ import annotations
++
++from collections import Counter
++from collections.abc import Callable
++from dataclasses import dataclass
++from typing import Protocol
++
++
++class Model(Protocol):
++    """Minimal interface every model must satisfy."""
++
++    def generate(self, prompt: str) -> str:
++        ...
++
++
++def exact_match(prediction: str, gold: str) -> float:
++    """Return 1.0 if stripped strings are identical, 0.0 otherwise."""
++    return 1.0 if prediction.strip() == gold.strip() else 0.0
++
++
++def token_f1(prediction: str, gold: str) -> float:
++    """Compute token-level F1 using multiset intersection.
++
++    Tokens are produced by whitespace split.  Returns 0.0 if either
++    sequence is empty.
++
++    Example
++    -------
++    prediction = "a b c", gold = "a b"
++    pred_tokens = Counter({"a": 1, "b": 1, "c": 1})
++    gold_tokens = Counter({"a": 1, "b": 1})
++    intersection size = 2
++    precision = 2 / 3, recall = 2 / 2 = 1.0
++    F1 = 2 * (2/3) * 1.0 / (2/3 + 1.0) = (4/3) / (5/3) = 4/5 = 0.8
++    """
++    pred_tokens = prediction.strip().split()
++    gold_tokens = gold.strip().split()
++
++    if not pred_tokens or not gold_tokens:
++        return 0.0
++
++    pred_counter = Counter(pred_tokens)
++    gold_counter = Counter(gold_tokens)
++
++    # Multiset intersection: for each token take the minimum count
++    common = sum((pred_counter & gold_counter).values())
++
++    if common == 0:
++        return 0.0
++
++    precision = common / len(pred_tokens)
++    recall = common / len(gold_tokens)
++    f1 = 2 * precision * recall / (precision + recall)
++    return f1
++
++
++def task_accuracy(
++    predictions: list[str],
++    golds: list[str],
++    match_fn: Callable[[str, str], float] | None = None,
++) -> float:
++    """Mean score across all prediction/gold pairs.
++
++    Uses :func:`exact_match` by default; pass *match_fn* to override.
++    """
++    if len(predictions) != len(golds):
++        raise ValueError(
++            f"predictions and golds must have the same length, "
++            f"got {len(predictions)} vs {len(golds)}"
++        )
++    if not predictions:
++        return 0.0
++    fn = match_fn if match_fn is not None else exact_match
++    scores = [fn(p, g) for p, g in zip(predictions, golds, strict=True)]
++    return sum(scores) / len(scores)
++
++
++@dataclass
++class EvalResult:
++    """Container for evaluation outputs."""
++
++    model_name: str
++    prompts: list[str]
++    predictions: list[str]
++    golds: list[str]
++    exact_match_score: float
++    token_f1_score: float
++
++
++def run_eval(
++    model: Model,
++    pairs: list[tuple[str, str]],
++    model_name: str = "model",
++) -> EvalResult:
++    """Run *model* on every (prompt, gold) pair and return an :class:`EvalResult`.
++
++    Parameters
++    ----------
++    model:
++        Any object implementing :class:`Model`.
++    pairs:
++        List of ``(prompt, gold_response)`` tuples.
++    model_name:
++        Human-readable label stored in the result.
++    """
++    prompts = [p for p, _ in pairs]
++    golds = [g for _, g in pairs]
++    predictions = [model.generate(p) for p in prompts]
++
++    em = task_accuracy(predictions, golds, exact_match)
++    f1 = task_accuracy(predictions, golds, token_f1)
++
++    return EvalResult(
++        model_name=model_name,
++        prompts=prompts,
++        predictions=predictions,
++        golds=golds,
++        exact_match_score=em,
++        token_f1_score=f1,
++    )
++
++
++def compare_models(baseline: EvalResult, tuned: EvalResult) -> dict:
++    """Compare baseline and tuned evaluation results.
++
++    Returns a dict with EM and F1 scores for both, their deltas, and an
++    ``improved`` flag that is ``True`` when *either* delta is positive.
++    """
++    delta_em = tuned.exact_match_score - baseline.exact_match_score
++    delta_f1 = tuned.token_f1_score - baseline.token_f1_score
++    return {
++        "baseline_em": baseline.exact_match_score,
++        "tuned_em": tuned.exact_match_score,
++        "delta_em": delta_em,
++        "baseline_f1": baseline.token_f1_score,
++        "tuned_f1": tuned.token_f1_score,
++        "delta_f1": delta_f1,
++        "improved": delta_em > 0 or delta_f1 > 0,
++    }

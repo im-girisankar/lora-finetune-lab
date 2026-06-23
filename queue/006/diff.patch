@@ -1,0 +1,73 @@
+diff --git a/src/lora_lab/config.py b/src/lora_lab/config.py
+new file mode 100644
+index 0000000..4ac5c22
+--- /dev/null
++++ b/src/lora_lab/config.py
+@@ -0,0 +1,67 @@
++"""LoRA training configuration dataclass and helpers."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++
++
++@dataclass
++class LoraLabConfig:
++    """All hyper-parameters for a LoRA fine-tuning run."""
++
++    rank: int = 8
++    alpha: int = 16
++    dropout: float = 0.05
++    target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
++    lr: float = 2e-4
++    epochs: int = 3
++    batch_size: int = 4
++    base_model: str = "TinyLlama/TinyLlama-1.1B-chat-v1.0"
++
++
++def validate(config: LoraLabConfig) -> None:
++    """Raise ``ValueError`` if *config* contains invalid values."""
++    if config.rank <= 0:
++        raise ValueError(f"rank must be positive, got {config.rank}")
++    if config.alpha <= 0:
++        raise ValueError(f"alpha must be positive, got {config.alpha}")
++    if not (0.0 <= config.dropout < 1.0):
++        raise ValueError(f"dropout must be in [0, 1), got {config.dropout}")
++    if config.epochs <= 0:
++        raise ValueError(f"epochs must be positive, got {config.epochs}")
++    if config.batch_size <= 0:
++        raise ValueError(f"batch_size must be positive, got {config.batch_size}")
++    if config.lr <= 0:
++        raise ValueError(f"lr must be positive, got {config.lr}")
++    if config.rank > config.alpha:
++        raise ValueError(
++            f"rank ({config.rank}) must be <= alpha ({config.alpha}) for stable training"
++        )
++
++
++def to_dict(config: LoraLabConfig) -> dict:
++    """Serialize *config* to a plain dict."""
++    return {
++        "rank": config.rank,
++        "alpha": config.alpha,
++        "dropout": config.dropout,
++        "target_modules": list(config.target_modules),
++        "lr": config.lr,
++        "epochs": config.epochs,
++        "batch_size": config.batch_size,
++        "base_model": config.base_model,
++    }
++
++
++def from_dict(d: dict) -> LoraLabConfig:
++    """Deserialize a plain dict into a :class:`LoraLabConfig`."""
++    return LoraLabConfig(
++        rank=d.get("rank", 8),
++        alpha=d.get("alpha", 16),
++        dropout=d.get("dropout", 0.05),
++        target_modules=list(d.get("target_modules", ["q_proj", "v_proj"])),
++        lr=d.get("lr", 2e-4),
++        epochs=d.get("epochs", 3),
++        batch_size=d.get("batch_size", 4),
++        base_model=d.get("base_model", "TinyLlama/TinyLlama-1.1B-chat-v1.0"),
++    )

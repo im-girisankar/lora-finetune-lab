@@ -1,0 +1,92 @@
+diff --git a/tests/test_config.py b/tests/test_config.py
+new file mode 100644
+index 0000000..1dd175e
+--- /dev/null
++++ b/tests/test_config.py
+@@ -0,0 +1,86 @@
++"""Tests for lora_lab.config."""
++
++from __future__ import annotations
++
++import pytest
++
++from lora_lab.config import LoraLabConfig, from_dict, to_dict, validate
++
++# ---------------------------------------------------------------------------
++# validate
++# ---------------------------------------------------------------------------
++
++
++def test_default_config_valid():
++    """Default LoraLabConfig should pass validation without errors."""
++    cfg = LoraLabConfig()
++    validate(cfg)  # must not raise
++
++
++def test_config_rank_positive():
++    cfg = LoraLabConfig(rank=0)
++    with pytest.raises(ValueError, match="rank"):
++        validate(cfg)
++
++
++def test_config_alpha_positive():
++    cfg = LoraLabConfig(alpha=0)
++    with pytest.raises(ValueError, match="alpha"):
++        validate(cfg)
++
++
++def test_config_dropout_range_too_high():
++    cfg = LoraLabConfig(dropout=1.0)
++    with pytest.raises(ValueError, match="dropout"):
++        validate(cfg)
++
++
++def test_config_dropout_range_negative():
++    cfg = LoraLabConfig(dropout=-0.1)
++    with pytest.raises(ValueError, match="dropout"):
++        validate(cfg)
++
++
++def test_config_rank_le_alpha():
++    """rank > alpha should raise ValueError."""
++    cfg = LoraLabConfig(rank=16, alpha=8)
++    with pytest.raises(ValueError, match="rank"):
++        validate(cfg)
++
++
++# ---------------------------------------------------------------------------
++# to_dict / from_dict
++# ---------------------------------------------------------------------------
++
++
++def test_config_to_from_dict_roundtrip():
++    cfg = LoraLabConfig(rank=4, alpha=8, dropout=0.1, epochs=5)
++    roundtripped = from_dict(to_dict(cfg))
++    assert roundtripped.rank == cfg.rank
++    assert roundtripped.alpha == cfg.alpha
++    assert roundtripped.dropout == cfg.dropout
++    assert roundtripped.epochs == cfg.epochs
++    assert roundtripped.target_modules == cfg.target_modules
++    assert roundtripped.base_model == cfg.base_model
++
++
++def test_config_from_dict_sets_fields():
++    d = {
++        "rank": 2,
++        "alpha": 4,
++        "dropout": 0.0,
++        "target_modules": ["q_proj"],
++        "lr": 1e-3,
++        "epochs": 1,
++        "batch_size": 2,
++        "base_model": "gpt2",
++    }
++    cfg = from_dict(d)
++    assert cfg.rank == 2
++    assert cfg.alpha == 4
++    assert cfg.dropout == 0.0
++    assert cfg.target_modules == ["q_proj"]
++    assert cfg.lr == 1e-3
++    assert cfg.epochs == 1
++    assert cfg.batch_size == 2
++    assert cfg.base_model == "gpt2"

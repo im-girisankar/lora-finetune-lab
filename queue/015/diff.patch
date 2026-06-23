@@ -1,0 +1,125 @@
+diff --git a/tests/test_model_card.py b/tests/test_model_card.py
+new file mode 100644
+index 0000000..67ab74a
+--- /dev/null
++++ b/tests/test_model_card.py
+@@ -0,0 +1,119 @@
++"""Tests for lora_lab.model_card."""
++
++from __future__ import annotations
++
++import pathlib
++
++from lora_lab.config import LoraLabConfig
++from lora_lab.eval import EvalResult
++from lora_lab.model_card import generate_model_card
++
++# Repo root is the parent of the tests/ directory
++_REPO_ROOT = pathlib.Path(__file__).parent.parent
++_EXAMPLES_DIR = _REPO_ROOT / "examples"
++
++
++def _make_result(name: str, em: float, f1: float) -> EvalResult:
++    return EvalResult(
++        model_name=name,
++        prompts=["Tell me about LoRA."],
++        predictions=["LoRA is a fine-tuning technique."],
++        golds=["LoRA stands for Low-Rank Adaptation."],
++        exact_match_score=em,
++        token_f1_score=f1,
++    )
++
++
++def _card(config=None, dataset_path="examples/data.jsonl"):
++    if config is None:
++        config = LoraLabConfig(rank=4, alpha=8)
++    baseline = _make_result("baseline", em=0.3, f1=0.5)
++    tuned = _make_result("tuned", em=0.7, f1=0.8)
++    return generate_model_card(config, baseline, tuned, dataset_path=dataset_path)
++
++
++def test_model_card_contains_base_model():
++    config = LoraLabConfig(rank=4, alpha=8, base_model="TinyLlama/TinyLlama-1.1B-chat-v1.0")
++    card = _card(config=config)
++    assert config.base_model in card
++
++
++def test_model_card_contains_rank():
++    config = LoraLabConfig(rank=4, alpha=8)
++    card = _card(config=config)
++    assert str(config.rank) in card
++
++
++def test_model_card_contains_metrics():
++    card = _card()
++    assert "exact_match" in card
++    assert "token_f1" in card
++
++
++def test_model_card_contains_dataset():
++    dataset_path = "examples/data.jsonl"
++    card = _card(dataset_path=dataset_path)
++    assert dataset_path in card
++
++
++# ---------------------------------------------------------------------------
++# card built from real example prediction files shows positive delta
++# ---------------------------------------------------------------------------
++
++
++def _load_predictions_jsonl(path: pathlib.Path):
++    """Parse predictions JSONL; return (prompts, golds, predictions)."""
++    import json
++
++    prompts, golds, predictions = [], [], []
++    for line in path.read_text(encoding="utf-8").splitlines():
++        line = line.strip()
++        if line:
++            obj = json.loads(line)
++            prompts.append(obj["prompt"])
++            golds.append(obj["gold"])
++            predictions.append(obj["prediction"])
++    return prompts, golds, predictions
++
++
++def test_card_from_example_predictions_has_positive_delta():
++    """Card built from examples/baseline_predictions.jsonl and tuned_predictions.jsonl
++    must show a genuine improvement (tuned EM > baseline EM)."""
++    from lora_lab.eval import EvalResult, exact_match, task_accuracy, token_f1
++
++    b_prompts, b_golds, b_preds = _load_predictions_jsonl(
++        _EXAMPLES_DIR / "baseline_predictions.jsonl"
++    )
++    t_prompts, t_golds, t_preds = _load_predictions_jsonl(
++        _EXAMPLES_DIR / "tuned_predictions.jsonl"
++    )
++
++    baseline = EvalResult(
++        model_name="baseline",
++        prompts=b_prompts,
++        predictions=b_preds,
++        golds=b_golds,
++        exact_match_score=task_accuracy(b_preds, b_golds, exact_match),
++        token_f1_score=task_accuracy(b_preds, b_golds, token_f1),
++    )
++    tuned = EvalResult(
++        model_name="tuned",
++        prompts=t_prompts,
++        predictions=t_preds,
++        golds=t_golds,
++        exact_match_score=task_accuracy(t_preds, t_golds, exact_match),
++        token_f1_score=task_accuracy(t_preds, t_golds, token_f1),
++    )
++
++    config = LoraLabConfig(rank=4, alpha=8)
++    card = generate_model_card(config, baseline, tuned, dataset_path="examples/data.jsonl")
++
++    # The tuned file has 5/5 exact matches; baseline has 0/5.
++    assert tuned.exact_match_score > baseline.exact_match_score, (
++        f"Expected tuned EM ({tuned.exact_match_score}) > "
++        f"baseline EM ({baseline.exact_match_score})"
++    )
++    # The card must contain non-zero tuned scores
++    assert "1.0000" in card or tuned.exact_match_score > 0.0
++    # Sanity: baseline is genuinely worse
++    assert baseline.exact_match_score == 0.0

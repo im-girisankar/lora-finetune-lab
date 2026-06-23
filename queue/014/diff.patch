@@ -1,0 +1,141 @@
+diff --git a/tests/test_eval.py b/tests/test_eval.py
+new file mode 100644
+index 0000000..8a77266
+--- /dev/null
++++ b/tests/test_eval.py
+@@ -0,0 +1,135 @@
++"""Tests for lora_lab.eval."""
++
++from __future__ import annotations
++
++import pytest
++
++from lora_lab.eval import (
++    EvalResult,
++    compare_models,
++    exact_match,
++    run_eval,
++    token_f1,
++)
++
++# ---------------------------------------------------------------------------
++# exact_match
++# ---------------------------------------------------------------------------
++
++
++def test_exact_match_equal():
++    assert exact_match("hello", "hello") == 1.0
++
++
++def test_exact_match_unequal():
++    assert exact_match("hello", "world") == 0.0
++
++
++def test_exact_match_strips_whitespace():
++    assert exact_match("  hello  ", "hello") == 1.0
++
++
++# ---------------------------------------------------------------------------
++# token_f1
++# ---------------------------------------------------------------------------
++
++
++def test_token_f1_perfect():
++    # pred=["a","b","c"], gold=["a","b","c"], common=3, P=1.0, R=1.0, F1=1.0
++    assert token_f1("a b c", "a b c") == pytest.approx(1.0)
++
++
++def test_token_f1_partial():
++    # pred=["a","b"], gold=["a","b","c"]
++    # common=2, precision=2/2=1.0, recall=2/3, F1=(4/3)/(5/3)=0.8
++    result = token_f1("a b", "a b c")
++    assert result < 1.0
++    assert result > 0.0
++    assert result == pytest.approx(0.8)
++
++
++def test_token_f1_no_overlap():
++    assert token_f1("x y", "a b") == 0.0
++
++
++def test_token_f1_empty_prediction():
++    assert token_f1("", "a b") == 0.0
++
++
++# ---------------------------------------------------------------------------
++# run_eval
++# ---------------------------------------------------------------------------
++
++
++def test_run_eval_scores():
++    """A model that echoes gold strings should yield exact_match == 1.0."""
++    pairs = [
++        ("What is 1+1?", "2"),
++        ("Capital of France?", "Paris"),
++        ("Color of sky?", "blue"),
++    ]
++
++    class EchoModel:
++        """Returns exactly the gold for each prompt via a pre-built dict."""
++
++        def __init__(self, prompt_gold_pairs):
++            self._lookup = {p: g for p, g in prompt_gold_pairs}
++
++        def generate(self, prompt: str) -> str:
++            return self._lookup[prompt]
++
++    model = EchoModel(pairs)
++    result = run_eval(model, pairs, model_name="perfect")
++    assert result.exact_match_score == pytest.approx(1.0)
++    assert result.model_name == "perfect"
++
++
++# ---------------------------------------------------------------------------
++# compare_models
++# ---------------------------------------------------------------------------
++
++
++def _make_result(name: str, em: float, f1: float) -> EvalResult:
++    return EvalResult(
++        model_name=name,
++        prompts=["p1"],
++        predictions=["pred"],
++        golds=["gold"],
++        exact_match_score=em,
++        token_f1_score=f1,
++    )
++
++
++def test_compare_models_delta():
++    baseline = _make_result("baseline", em=0.5, f1=0.6)
++    tuned = _make_result("tuned", em=0.8, f1=0.9)
++    comparison = compare_models(baseline, tuned)
++    assert comparison["delta_em"] == pytest.approx(0.3)
++    assert comparison["delta_f1"] == pytest.approx(0.3)
++
++
++def test_compare_models_improved_flag():
++    baseline = _make_result("baseline", em=0.5, f1=0.6)
++    tuned = _make_result("tuned", em=0.8, f1=0.6)
++    comparison = compare_models(baseline, tuned)
++    assert comparison["improved"] is True
++
++
++def test_compare_models_not_improved():
++    baseline = _make_result("baseline", em=0.8, f1=0.9)
++    tuned = _make_result("tuned", em=0.5, f1=0.6)
++    comparison = compare_models(baseline, tuned)
++    assert comparison["improved"] is False
++
++
++# ---------------------------------------------------------------------------
++# task_accuracy â€” length mismatch raises ValueError
++# ---------------------------------------------------------------------------
++
++
++def test_task_accuracy_mismatched_lengths_raises():
++    """Mismatched predictions/golds must raise ValueError, not silently truncate."""
++    from lora_lab.eval import task_accuracy
++
++    with pytest.raises(ValueError, match="same length"):
++        task_accuracy(["a", "b", "c"], ["a", "b"])

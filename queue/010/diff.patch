@@ -1,0 +1,109 @@
+diff --git a/src/lora_lab/train.py b/src/lora_lab/train.py
+new file mode 100644
+index 0000000..defac07
+--- /dev/null
++++ b/src/lora_lab/train.py
+@@ -0,0 +1,103 @@
++"""Training entry point â€” all heavy imports are deferred inside functions.
++
++This module is intentionally import-safe without the ``train`` extra installed.
++Only stdlib and lora_lab imports appear at module level.
++"""
++
++from __future__ import annotations
++
++from lora_lab.config import LoraLabConfig
++
++
++def train(
++    config: LoraLabConfig,
++    train_data: list[dict],
++    val_data: list[dict],
++) -> None:
++    """Fine-tune *config.base_model* with LoRA on *train_data*.
++
++    All heavy dependencies (torch, transformers, peft, datasets) are imported
++    here at call time so the module remains importable in lightweight envs.
++
++    Parameters
++    ----------
++    config:
++        Fully validated :class:`~lora_lab.config.LoraLabConfig`.
++    train_data:
++        List of record dicts (instruction / input / output).
++    val_data:
++        Validation records for evaluation during training.
++    """
++    # --- lazy imports (require `pip install lora-finetune-lab[train]`) ---
++    import torch  # noqa: F401
++    from datasets import Dataset
++    from peft import LoraConfig, TaskType, get_peft_model
++    from transformers import (
++        AutoModelForCausalLM,
++        AutoTokenizer,
++        DataCollatorForSeq2Seq,
++        Trainer,
++        TrainingArguments,
++    )
++
++    from lora_lab.data import format_prompt
++
++    tokenizer = AutoTokenizer.from_pretrained(config.base_model)
++    tokenizer.pad_token = tokenizer.eos_token
++
++    def _tokenize(record: dict):
++        prompt, response = format_prompt(record)
++        full_text = prompt + " " + response + tokenizer.eos_token
++        encoded = tokenizer(
++            full_text,
++            truncation=True,
++            max_length=512,
++            padding=False,
++        )
++        encoded["labels"] = encoded["input_ids"].copy()
++        return encoded
++
++    train_dataset = Dataset.from_list(train_data).map(_tokenize, remove_columns=["instruction", "input", "output"])
++    val_dataset = Dataset.from_list(val_data).map(_tokenize, remove_columns=["instruction", "input", "output"])
++
++    base_model = AutoModelForCausalLM.from_pretrained(config.base_model)
++
++    lora_cfg = LoraConfig(
++        r=config.rank,
++        lora_alpha=config.alpha,
++        lora_dropout=config.dropout,
++        target_modules=config.target_modules,
++        task_type=TaskType.CAUSAL_LM,
++        bias="none",
++    )
++    model = get_peft_model(base_model, lora_cfg)
++    model.print_trainable_parameters()
++
++    training_args = TrainingArguments(
++        output_dir="./lora-output",
++        num_train_epochs=config.epochs,
++        per_device_train_batch_size=config.batch_size,
++        per_device_eval_batch_size=config.batch_size,
++        learning_rate=config.lr,
++        eval_strategy="epoch",
++        save_strategy="epoch",
++        load_best_model_at_end=True,
++        logging_steps=10,
++        fp16=torch.cuda.is_available(),
++        report_to="none",
++    )
++
++    data_collator = DataCollatorForSeq2Seq(tokenizer, model=model, padding=True)
++
++    trainer = Trainer(
++        model=model,
++        args=training_args,
++        train_dataset=train_dataset,
++        eval_dataset=val_dataset,
++        tokenizer=tokenizer,
++        data_collator=data_collator,
++    )
++
++    trainer.train()
++    trainer.save_model("./lora-output/final")
++    print("Training complete. Model saved to ./lora-output/final")

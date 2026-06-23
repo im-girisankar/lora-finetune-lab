@@ -1,0 +1,16 @@
+diff --git a/examples/data.jsonl b/examples/data.jsonl
+new file mode 100644
+index 0000000..35cdd28
+--- /dev/null
++++ b/examples/data.jsonl
+@@ -0,0 +1,10 @@
++{"instruction": "Summarize the following text in one sentence.", "input": "Machine learning is a subset of artificial intelligence that enables systems to learn from data and improve their performance over time without being explicitly programmed.", "output": "Machine learning allows systems to learn from data and improve automatically without explicit programming."}
++{"instruction": "Translate the following sentence to Spanish.", "input": "The weather is beautiful today.", "output": "El tiempo estÃ¡ hermoso hoy."}
++{"instruction": "Write a Python function to check if a number is prime.", "input": "", "output": "def is_prime(n: int) -> bool:\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True"}
++{"instruction": "Classify the sentiment of this review as Positive, Negative, or Neutral.", "input": "The delivery was late and the packaging was damaged, but the product itself works fine.", "output": "Neutral"}
++{"instruction": "Convert the temperature from Celsius to Fahrenheit.", "input": "25 degrees Celsius", "output": "77 degrees Fahrenheit (Formula: F = C Ã— 9/5 + 32)"}
++{"instruction": "List the steps to make a cup of tea.", "input": "", "output": "1. Boil water. 2. Place a tea bag in a cup. 3. Pour hot water over the tea bag. 4. Steep for 3-5 minutes. 5. Remove the tea bag. 6. Add milk or sugar if desired."}
++{"instruction": "Identify the main named entities in the following sentence.", "input": "Elon Musk founded SpaceX in 2002 in Hawthorne, California.", "output": "Elon Musk (Person), SpaceX (Organization), 2002 (Date), Hawthorne (Location), California (Location)"}
++{"instruction": "Rewrite the sentence to fix grammatical errors.", "input": "Him and me went to the store yesterday and buyed some groceries.", "output": "He and I went to the store yesterday and bought some groceries."}
++{"instruction": "Explain what a REST API is in simple terms.", "input": "", "output": "A REST API is a way for different software applications to communicate over the internet using standard HTTP methods like GET, POST, PUT, and DELETE to read and modify data."}
++{"instruction": "Given the context, answer the question.", "input": "Context: The Python programming language was created by Guido van Rossum and first released in 1991. Question: Who created Python?", "output": "Python was created by Guido van Rossum."}
