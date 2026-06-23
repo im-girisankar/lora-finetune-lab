@@ -1,0 +1,12 @@
+# This project uses pyproject.toml for dependency management.
+#
+# Core (pure Python, no GPU needed):
+#   pip install -e .
+#
+# With training support (requires GPU):
+#   pip install -e ".[train]"
+#
+# With dev tools (pytest, ruff):
+#   pip install -e ".[dev]"
+#
+# See pyproject.toml [project.optional-dependencies] for the full lists.
