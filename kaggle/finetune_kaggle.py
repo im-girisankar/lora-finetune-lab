@@ -11,7 +11,10 @@
 import subprocess, sys
 def pip(*p): subprocess.run([sys.executable, "-m", "pip", "install", "-q", *p], check=True)
 pip("transformers>=4.46", "peft>=0.11", "datasets>=2.19", "accelerate>=0.30")
+# Colab ships torchao 0.10 which newer peft rejects; LoRA doesn't need it — remove it.
+subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "torchao"], check=False)
 
+import json, os
 import numpy as np, torch
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, get_peft_model
@@ -59,35 +62,51 @@ def evaluate(split, tag=""):
     return correct / n
 
 
-print("Evaluating BASE model (before fine-tuning) ...")
-acc_before = evaluate(te, "base")
-print(f"  base accuracy: {acc_before:.3f}")
+# Checkpointing so reruns don't repeat the expensive steps (same Colab session).
+STATE, ADAPTER = "lora_state.json", "lora_adapter"
+state = json.load(open(STATE)) if os.path.exists(STATE) else {}
 
-# ---- LoRA fine-tune ----
-print("Preparing LoRA fine-tune ...")
-texts = [chat(r["text"], LABELS[r["label"]]) for r in tr]
-def tok_fn(b):
-    enc = tok(b["text"], truncation=True, max_length=160, padding="max_length")
-    enc["labels"] = [[(t if t != tok.pad_token_id else -100) for t in ids] for ids in enc["input_ids"]]
-    return enc
-train_ds = Dataset.from_dict({"text": texts}).map(tok_fn, batched=True, remove_columns=["text"])
+# --- base eval (cached) ---
+if "acc_before" in state:
+    acc_before = state["acc_before"]
+    print(f"Resumed cached base accuracy: {acc_before:.3f}")
+else:
+    print("Evaluating BASE model (before fine-tuning) ...")
+    acc_before = evaluate(te, "base")
+    state["acc_before"] = acc_before; json.dump(state, open(STATE, "w"))
+    print(f"  base accuracy: {acc_before:.3f}")
 
-model = get_peft_model(model, LoraConfig(
-    r=8, lora_alpha=16, lora_dropout=0.05,
-    target_modules=["q_proj", "v_proj"], task_type="CAUSAL_LM"))
-model.print_trainable_parameters()
-
-Trainer(
-    model=model,
-    args=TrainingArguments(
-        output_dir="lora_out", per_device_train_batch_size=8, num_train_epochs=2,
-        learning_rate=2e-4, bf16=True, logging_steps=25, save_strategy="no",
-        report_to="none", seed=SEED),
-    train_dataset=train_ds, data_collator=default_data_collator,
-).train()
+# --- LoRA: load saved adapter if present, else train and save it ---
+if os.path.isdir(ADAPTER):
+    from peft import PeftModel
+    print(f"Resuming saved LoRA adapter from {ADAPTER}/ (skipping training) ...")
+    model = PeftModel.from_pretrained(model, ADAPTER)
+else:
+    print("Preparing LoRA fine-tune ...")
+    texts = [chat(r["text"], LABELS[r["label"]]) for r in tr]
+    def tok_fn(b):
+        enc = tok(b["text"], truncation=True, max_length=160, padding="max_length")
+        enc["labels"] = [[(t if t != tok.pad_token_id else -100) for t in ids] for ids in enc["input_ids"]]
+        return enc
+    train_ds = Dataset.from_dict({"text": texts}).map(tok_fn, batched=True, remove_columns=["text"])
+    model = get_peft_model(model, LoraConfig(
+        r=8, lora_alpha=16, lora_dropout=0.05,
+        target_modules=["q_proj", "v_proj"], task_type="CAUSAL_LM"))
+    model.print_trainable_parameters()
+    Trainer(
+        model=model,
+        args=TrainingArguments(
+            output_dir="lora_out", per_device_train_batch_size=8, num_train_epochs=2,
+            learning_rate=2e-4, bf16=True, logging_steps=25, save_strategy="no",
+            report_to="none", seed=SEED),
+        train_dataset=train_ds, data_collator=default_data_collator,
+    ).train()
+    model.save_pretrained(ADAPTER)
+    print(f"Saved LoRA adapter -> {ADAPTER}/ (reruns will skip training)")
 
 print("Evaluating TUNED model (after fine-tuning) ...")
 acc_after = evaluate(te, "tuned")
+state["acc_after"] = acc_after; json.dump(state, open(STATE, "w"))
 
 # ---- report + model card ----
 delta = acc_after - acc_before
