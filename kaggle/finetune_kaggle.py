@@ -19,7 +19,7 @@ from transformers import (AutoModelForCausalLM, AutoTokenizer, Trainer,
                           TrainingArguments, default_data_collator)
 
 MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
-N_TRAIN, N_TEST = 800, 300
+N_TRAIN, N_TEST = 800, 250
 SEED = 7
 LABELS = ["World", "Sports", "Business", "Sci/Tech"]
 PROMPT = ("Classify the topic of this news text as exactly one of: "
@@ -46,19 +46,21 @@ def chat(text, label=None):
 
 
 @torch.no_grad()
-def evaluate(split):
-    model.eval(); correct = 0
-    for row in split:
-        ids = tok(chat(row["text"]), return_tensors="pt").input_ids.to(DEV)
-        out = model.generate(ids, max_new_tokens=4, do_sample=False, pad_token_id=tok.pad_token_id)
-        gen = tok.decode(out[0, ids.shape[1]:], skip_special_tokens=True)
+def evaluate(split, tag=""):
+    model.eval(); correct = 0; n = len(split)
+    for i, row in enumerate(split):
+        enc = tok(chat(row["text"]), return_tensors="pt").to(DEV)
+        out = model.generate(**enc, max_new_tokens=4, do_sample=False, pad_token_id=tok.pad_token_id)
+        gen = tok.decode(out[0, enc["input_ids"].shape[1]:], skip_special_tokens=True)
         pred = next((lab for lab in LABELS if lab.lower() in gen.lower()), "")
         correct += int(pred == LABELS[row["label"]])
-    return correct / len(split)
+        if (i + 1) % 50 == 0:
+            print(f"    {tag} {i+1}/{n}  (running acc {correct/(i+1):.3f})")
+    return correct / n
 
 
 print("Evaluating BASE model (before fine-tuning) ...")
-acc_before = evaluate(te)
+acc_before = evaluate(te, "base")
 print(f"  base accuracy: {acc_before:.3f}")
 
 # ---- LoRA fine-tune ----
@@ -85,7 +87,7 @@ Trainer(
 ).train()
 
 print("Evaluating TUNED model (after fine-tuning) ...")
-acc_after = evaluate(te)
+acc_after = evaluate(te, "tuned")
 
 # ---- report + model card ----
 delta = acc_after - acc_before
