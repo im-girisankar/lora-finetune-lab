@@ -1,0 +1,5 @@
+{"prompt": "### Instruction:\nWhat is the capital of France?\n\n### Response:", "gold": "Paris", "prediction": "Lyon"}
+{"prompt": "### Instruction:\nWhat color is the sky on a clear day?\n\n### Response:", "gold": "blue", "prediction": "grey"}
+{"prompt": "### Instruction:\nWhat is 2 + 2?\n\n### Response:", "gold": "4", "prediction": "5"}
+{"prompt": "### Instruction:\nName the largest planet in the solar system.\n\n### Response:", "gold": "Jupiter", "prediction": "Saturn"}
+{"prompt": "### Instruction:\nWhat language is spoken in Brazil?\n\n### Response:", "gold": "Portuguese", "prediction": "Spanish"}
